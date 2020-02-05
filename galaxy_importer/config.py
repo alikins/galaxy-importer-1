@@ -36,33 +36,34 @@ class Config(object):
         'infra_pulp': False,
         'infra_osd': False,
     }
-    IS_LOADED = False
     CONFIG_DATA = {}
 
-    def __init__(self):
+    def __init__(self, config_data=None):
         """Load config once and store inside class variable CONFIG_DATA.
         Populate instance from class variable CONFIG_DATA."""
 
-        if not Config.IS_LOADED:
-            Config.IS_LOADED = True
+        _data = {}
+        _data.update(self.DEFAULTS)
+        _data.update(config_data or {})
 
-            config_file_data = ConfigFile().load()
-            Config.CONFIG_DATA.update(Config.DEFAULTS)
-            Config.CONFIG_DATA.update(config_file_data)
-
-        self.__dict__ = Config.CONFIG_DATA
+        self.log_level_main = _data['log_level_main']
+        self.run_ansible_test = _data['run_ansible_test']
+        self.infra_pulp = _data['infra_pulp']
+        self.infra_osd = _data['infram_osd']
 
 
 class ConfigFile(object):
     """Load config from file and return dictionary."""
 
-    def load(self):
-        config_parser_data = self._load_file()
-        return self._to_dictionary(config_parser_data)
+    @staticmethod
+    def load():
+        config_parser_data = ConfigFile.load_files(FILE_LOCATIONS)
+        return ConfigFile.to_dictionary(config_parser_data)
 
-    def _load_file(self):
+    @staticmethod
+    def load_files(file_locations):
         file_path = None
-        for f in FILE_LOCATIONS:
+        for f in file_locations:
             if os.path.isfile(f):
                 file_path = f
                 break
@@ -75,7 +76,8 @@ class ConfigFile(object):
             return config_parser[IMPORTER_INI_SECTION]
         return {}
 
-    def _to_dictionary(self, config_parser_data):
+    @staticmethod
+    def to_dictionary(config_parser_data):
         """Turn from configparser object in to dictionary, with booleans."""
         config_data = {}
         for key in list(config_parser_data):

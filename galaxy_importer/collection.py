@@ -40,16 +40,16 @@ CollectionFilename = \
     namedtuple("CollectionFilename", ["namespace", "name", "version"])
 
 
-def import_collection(file, filename=None, logger=None):
+def import_collection(file, cfg, filename=None, logger=None):
     """Process import on collection artifact file object.
 
     :raises exc.ImporterError: On errors that fail the import process.
     """
     logger = logger or default_logger
-    return _import_collection(file, filename, logger)
+    return _import_collection(file, cfg, filename, logger)
 
 
-def _import_collection(file, filename, logger):
+def _import_collection(file, cfg, filename, logger):
     with tempfile.TemporaryDirectory() as tmp_dir:
         sub_path = 'ansible_collections/placeholder_namespace/placeholder_name'
         extract_dir = os.path.join(tmp_dir, sub_path)
@@ -57,7 +57,7 @@ def _import_collection(file, filename, logger):
             pkg_tar.extractall(extract_dir)
         data = CollectionLoader(extract_dir, filename, logger=logger).load()
 
-    ansible_test_runner = runners.get_runner()
+    ansible_test_runner = runners.get_runner(config=cfg)
     if ansible_test_runner:
         ansible_test_runner(logger=logger).run()
 

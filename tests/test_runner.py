@@ -43,8 +43,9 @@ def test_get_runner_ansible_test_local(temp_config_file):
     with open(temp_config_file, 'w') as f:
         f.write('[galaxy-importer]\nRUN_ANSIBLE_TEST = True')
         f.flush()
-        config.Config.IS_LOADED = False
-        assert runners.get_runner() == runners.LocalAnsibleTestRunner
+        config_data = config.ConfigFile.load([temp_config_file])
+        cfg = config.Config(config_data=config_data)
+        assert runners.get_runner(cfg) == runners.LocalAnsibleTestRunner
 
 
 def test_get_runner_pulp(temp_config_file):
@@ -52,8 +53,9 @@ def test_get_runner_pulp(temp_config_file):
         f.write('[galaxy-importer]\nRUN_ANSIBLE_TEST = True\n'
                 'INFRA_PULP = True')
         f.flush()
-        config.Config.IS_LOADED = False
-        assert runners.get_runner() == runners.LocalImageTestRunner
+        config_data = config.ConfigFile.load([temp_config_file])
+        cfg = config.Config(config_data=config_data)
+        assert runners.get_runner(cfg) == runners.LocalImageTestRunner
 
 
 def test_get_runner_pulp_and_osd(temp_config_file):
