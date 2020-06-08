@@ -110,7 +110,7 @@ class CollectionInfo(object):
     @namespace.validator
     @name.validator
     @version.validator
-    @readme.validator
+    # @readme.validator
     @authors.validator
     @repository.validator
     def _check_required(self, attribute, value):
@@ -212,7 +212,8 @@ class CollectionInfo(object):
 
     def __attrs_post_init__(self):
         """Checks called post init validation."""
-        self._check_license_or_license_file()
+        # self._check_license_or_license_file()
+        pass
 
     def _check_license_or_license_file(self):
         """Confirm mutually exclusive presence of license or license_file."""
@@ -252,13 +253,25 @@ class ResultContentItem(object):
     description = attr.ib()
 
 
+def _collection_repr(value):
+    return repr(value.label)
+    # return repr(value)
+
+
+def _content_repr(value):
+    # return repr(value)
+    return '[%s content items]' % len(value)
+
+
 @attr.s(frozen=True)
 class ImportResult(object):
     """Result of the import process, collection metadata, and contents."""
 
-    metadata = attr.ib(default=None, type=CollectionInfo)
-    docs_blob = attr.ib(factory=dict)
-    contents = attr.ib(factory=list, type=ResultContentItem)
+    metadata = attr.ib(default=None, type=CollectionInfo,
+                       repr=_collection_repr)
+    docs_blob = attr.ib(factory=dict, repr=False)
+    contents = attr.ib(factory=list, type=ResultContentItem,
+                       repr=_content_repr)
     custom_license = attr.ib(default=None)
 
 
