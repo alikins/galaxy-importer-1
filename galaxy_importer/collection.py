@@ -222,6 +222,16 @@ class CollectionLoader(object):
 
     def _build_docs_blob(self):
         """Build importer result docs_blob from collection documentation."""
+
+        # return an empty DocsBlob if run_ansible_doc=False
+        # if not self.cfg.run_ansible_doc:
+        rendered_readme = schema.RenderedDocFile()
+        docs_blob = schema.DocsBlob(
+            collection_readme=rendered_readme,
+            documentation_files=[],
+            contents=[],
+        )
+
         contents = [
             schema.DocsBlobContentItem(
                 content_name=c.name,
