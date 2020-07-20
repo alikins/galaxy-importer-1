@@ -232,6 +232,10 @@ class CollectionLoader(object):
             contents=[],
         )
 
+
+        if not self.cfg.run_ansible_doc:
+            return docs_blob
+
         contents = [
             schema.DocsBlobContentItem(
                 content_name=c.name,
@@ -245,7 +249,9 @@ class CollectionLoader(object):
 
         readme = markup_utils.get_readme_doc_file(self.path)
         if not readme:
-            raise exc.ImporterError('No collection readme found')
+            default_logger.error('no collection readme found %s', self.path)
+            return docs_blob
+            # raise exc.ImporterError('No collection readme found')
         rendered_readme = schema.RenderedDocFile(
             name=readme.name, html=markup_utils.get_html(readme))
 
