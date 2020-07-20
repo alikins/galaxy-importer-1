@@ -259,8 +259,8 @@ def _collection_repr(value):
 
 
 def _content_repr(value):
-    # return repr(value)
-    return '[%s content items]' % len(value)
+    return repr(value)
+    # return '[%s content items]' % len(value)
 
 
 @attr.s(frozen=True)
