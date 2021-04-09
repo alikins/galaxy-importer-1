@@ -31,7 +31,7 @@ FILENAME_REGEXP = re.compile(
     r"(?P<version>[0-9a-zA-Z.+-]+)\.tar\.gz$"
 )
 logger = logging.getLogger(__name__)
-
+logger.error('foooo')
 
 def main(args=None):
     config_data = config.ConfigFile.load()
@@ -39,6 +39,7 @@ def main(args=None):
     setup_logger(cfg)
     args = parse_args(args)
 
+    artifact_type = CO
     data = call_importer(filepath=args.file, cfg=cfg)
     if not data:
         return 1
@@ -54,8 +55,10 @@ def setup_logger(cfg):
     logger.setLevel(getattr(logging, cfg.log_level_main, 'INFO'))
 
     ch = logging.StreamHandler(stream=sys.stdout)
-    ch.setFormatter(CustomFormatter())
-    logger.addHandler(ch)
+    ch.setFormatter(logging.Formatter('%(levelname)s: %(name)s %(module)s:%(funcName)s:%(lineno)d - %(message)s'))
+    # logger.addHandler(ch)
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(ch)
 
 
 class CustomFormatter(logging.Formatter):
@@ -64,10 +67,11 @@ class CustomFormatter(logging.Formatter):
         if record.levelno == logging.INFO:
             return '%(message)s' % vars(record)
         else:
-            return '%(levelname)s: %(message)s' % vars(record)
+            return '%(levelname)s: %(name)s %(module)s:%(func)s:%(lineno)d - %(message)s' % vars(record)
 
 
 def parse_args(args):
+    # TODO: add arg or sub mode to indicate if importing collection or role
     parser = argparse.ArgumentParser(
         description='Run importer on collection and save result to disk.')
     parser.add_argument(
@@ -78,14 +82,23 @@ def parse_args(args):
         dest='print_result',
         action='store_true',
         help='print importer result to console')
+    parser.add_argument(
+        '--role',
+        dest='import_role',
+        action='store_true',
+        help='import role instead of collection')
     return parser.parse_args(args=args)
 
-
+# TODO: pass in arg for the archive type (role or container)
 def call_importer(filepath, cfg):
     """Returns result of galaxy_importer import process.
 
     :param file: Artifact file to import.
     """
+    # TODO: handle role archives and collection archives
+    #       either by splitting this up or abstracting it (or both)
+
+    # FIXME: need role archive filename regex
     match = FILENAME_REGEXP.match(os.path.basename(filepath))
     namespace, name, version = match.groups()
     filename = collection.CollectionFilename(namespace, name, version)

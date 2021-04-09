@@ -23,6 +23,11 @@ NAME_REGEXP = re.compile(r'^(?!.*__)[a-z]+[0-9a-z_]*$')
 CONTENT_NAME_REGEXP = re.compile(r'^(?!.*__)[a-z_]+[0-9a-z_]*$')
 
 
+class ContentArtifactType(enum.Enum):
+    COLLECTION = "collection"
+    ROLE = "role"
+
+
 class ContentCategory(enum.Enum):
     MODULE = 'module'
     ROLE = 'role'

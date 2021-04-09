@@ -25,6 +25,8 @@ from galaxy_importer import constants
 
 default_logger = logging.getLogger(__name__)
 
+log = default_logger
+
 Result = collections.namedtuple(
     'Result', ['content_type', 'path'])
 
@@ -44,7 +46,7 @@ class ContentFinder(object):
         self.path = path
         self.log = logger or default_logger
 
-        self.log.info('Finding content inside collection')
+        self.log.info('Finding content inside collection %s', self.path)
         contents = self._find_content()
 
         try:
@@ -57,9 +59,11 @@ class ContentFinder(object):
     def _find_content(self):
         for content_type, directory, func in self._content_type_dirs():
             content_path = os.path.join(self.path, directory)
+            log.debug('content_path: %s', content_path)
             if not os.path.exists(content_path):
                 continue
             yield from func(content_type, content_path)
+            log.debug('func: %s', func)
 
     def _find_plugins(self, content_type, content_dir):
         """Find all python files anywhere inside content_dir."""

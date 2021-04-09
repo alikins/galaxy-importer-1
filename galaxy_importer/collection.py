@@ -36,12 +36,14 @@ from galaxy_importer import __version__
 
 
 default_logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 DOCUMENTATION_DIR = 'docs'
 
 CollectionFilename = \
     namedtuple("CollectionFilename", ["namespace", "name", "version"])
 
+#TODO: extract the artifact opening/extracting bits to artifacts.py?
 
 def import_collection(file, filename=None, logger=None, cfg=None):
     """Process import on collection artifact file object.
@@ -57,21 +59,41 @@ def import_collection(file, filename=None, logger=None, cfg=None):
 
 
 def _import_collection(file, filename, logger, cfg):
-    with tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir) as tmp_dir:
+    # with tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir) as tmp_dir:
+    tmp_dir_obj =  tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir)
+    tmp_dir = tmp_dir_obj.name
+
+    def fauxexit(mgr, arg1, arg2, arg3):
+        log.debug('arg1: %s, arg2: %s, arg3: %s', arg1, arg2, arg3)
+        raise 37/0
+        return True
+
+    tmp_dir_obj.__exit__ = fauxexit
+
+    with tmp_dir_obj:
         sub_path = 'ansible_collections/placeholder_namespace/placeholder_name'
         extract_dir = os.path.join(tmp_dir, sub_path)
         os.makedirs(extract_dir)
+
+        log.debug(dir(tmp_dir_obj))
+        # import pprint
+        # log.debug(pprint.pformat(locals()))
 
         filepath = file.name
         if hasattr(file, 'file'):
             # handle a wrapped file object to get absolute filepath
             filepath = str(file.file.file.name)
 
+        log.debug('filepath: %s', filepath)
+        log.debug('extract_dir: %s', extract_dir)
+
         if not os.path.exists(filepath):
             parameters = {'ResponseContentDisposition': 'attachment;filename=archive.tar.gz'}
             storage_archive_url = file.storage.url(file.name, parameters=parameters)
             filepath = _download_archive(storage_archive_url, tmp_dir)
         _extract_archive(tarfile_path=filepath, extract_dir=extract_dir)
+
+        log.debug('artifact %s extracted to %s', filepath, extract_dir)
 
         data = CollectionLoader(extract_dir, filename, cfg=cfg, logger=logger).load()
         logger.info('Collection loading complete')
@@ -120,6 +142,8 @@ def _extract_tar_shell(tarfile_path, extract_dir):
         '-xf',
         file_name,
     ]
+    log.debug('tar extract shell command: %s', args)
+    log.debug('tar extract cwd: %s', cwd)
     subprocess.run(args, cwd=cwd, stderr=subprocess.PIPE, check=True)
 
 
@@ -136,21 +160,23 @@ class CollectionLoader(object):
         self.metadata = None
         self.docs_blob = None
         self.contents = None
+        log.debug('CollectionLoader init path=%s filename=%s', path, filename)
 
     def load(self):
-        self._load_collection_manifest()
+        log.debug('self.path: %s, self.filename=%s', self.path, self.filename)
+        # self._load_collection_manifest()
         self._rename_extract_path()
-        self._check_filename_matches_manifest()
-        self._check_metadata_filepaths()
+        # self._check_filename_matches_manifest()
+        # self._check_metadata_filepaths()
 
         self.doc_strings = {}
-        if self.cfg.run_ansible_doc:
-            self.doc_strings = loaders.DocStringLoader(
-                path=self.path,
-                fq_collection_name='{}.{}'.format(self.metadata.namespace, self.metadata.name),
-                logger=self.log,
-                cfg=self.cfg,
-            ).load()
+        # if self.cfg.run_ansible_doc:
+        #     self.doc_strings = loaders.DocStringLoader(
+        #         path=self.path,
+        #         fq_collection_name='{}.{}'.format(self.metadata.namespace, self.metadata.name),
+        #         logger=self.log,
+        #         cfg=self.cfg,
+        #     ).load()
 
         self.content_objs = list(self._load_contents())
 
@@ -178,13 +204,16 @@ class CollectionLoader(object):
             self.metadata = data.collection_info
 
     def _rename_extract_path(self):
+        log.debug('self.filename: %s', self.filename)
+        namespace = self.filename.namespace
+        name = self.filename.name
         old_ns_dir = os.path.dirname(self.path)
         ansible_collections_dir = os.path.dirname(old_ns_dir)
-        new_ns_dir = os.path.join(ansible_collections_dir, self.metadata.namespace)
+        new_ns_dir = os.path.join(ansible_collections_dir, namespace)
         os.rename(old_ns_dir, new_ns_dir)
 
         old_name_dir = os.path.join(new_ns_dir, os.path.basename(self.path))
-        new_name_dir = os.path.join(new_ns_dir, self.metadata.name)
+        new_name_dir = os.path.join(new_ns_dir, name)
         os.rename(old_name_dir, new_name_dir)
         self.path = new_name_dir
         self.log.debug(f'Renamed extract dir to: {self.path}')
@@ -204,7 +233,9 @@ class CollectionLoader(object):
     def _load_contents(self):
         """Find and load data for each content inside the collection."""
         found_contents = ContentFinder().find_contents(self.path, self.log)
+        log.debug('found_contents from %s: %s', self.path, found_contents)
         for content_type, rel_path in found_contents:
+            log.debug('rel_path: %s', rel_path)
             loader_cls = loaders.get_loader_cls(content_type)
             loader = loader_cls(
                 content_type, rel_path, self.path, self.doc_strings, self.cfg, self.log)
@@ -248,11 +279,15 @@ class CollectionLoader(object):
             for c in self.content_objs
         ]
 
-        readme = markup_utils.get_readme_doc_file(self.path)
-        if not readme:
-            raise exc.ImporterError('No collection readme found')
-        rendered_readme = schema.RenderedDocFile(
-            name=readme.name, html=markup_utils.get_html(readme))
+        rendered_readme = ""
+        try:
+            readme = markup_utils.get_readme_doc_file(self.path)
+            if not readme:
+                raise exc.ImporterError('No collection readme found')
+            rendered_readme = schema.RenderedDocFile(
+                name=readme.name, html=markup_utils.get_html(readme))
+        except exc.ImporterError as e:
+            log.error(e)
 
         rendered_doc_files = []
         doc_files = markup_utils.get_doc_files(
