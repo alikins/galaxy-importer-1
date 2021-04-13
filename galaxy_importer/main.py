@@ -24,6 +24,7 @@ import sys
 
 from galaxy_importer import collection
 from galaxy_importer import config
+from galaxy_importer.constants import ContentArtifactType
 from galaxy_importer.exceptions import ImporterError
 
 FILENAME_REGEXP = re.compile(
@@ -39,8 +40,12 @@ def main(args=None):
     setup_logger(cfg)
     args = parse_args(args)
 
-    artifact_type = CO
-    data = call_importer(filepath=args.file, cfg=cfg)
+    artifact_type = ContentArtifactType.COLLECTION
+    if args.import_role:
+        artifact_type = ContentArtifactType.ROLE
+
+    data = call_importer(filepath=args.file, cfg=cfg,
+                         artifact_type=artifact_type)
     if not data:
         return 1
 
@@ -90,13 +95,36 @@ def parse_args(args):
     return parser.parse_args(args=args)
 
 # TODO: pass in arg for the archive type (role or container)
-def call_importer(filepath, cfg):
+def call_importer(filepath, cfg, artifact_type):
     """Returns result of galaxy_importer import process.
 
     :param file: Artifact file to import.
+    :param cfg: galaxyimporter.config.Config instance
+    :param artifact_type: galaxyimporter.constants.ContentArtifactType enum
     """
     # TODO: handle role archives and collection archives
     #       either by splitting this up or abstracting it (or both)
+    if artifact_type == ContentArtifactType.COLLECTION:
+        return call_collection_importer(filepath, cfg)
+    if artifact_type == ContentArtifactType.ROLE:
+        return call_role_importer(filepath, cfg)
+
+def call_role_importer(filepath, cfg):
+    """Returns result of galaxy_importer Role import process.
+
+    :param file: Role artifact file to import.
+    :param cfg: galaxyimporter.config.Config instance
+    """
+    logger.debug('filepath: %s', filepath)
+    logger.info('Role importer processing completed successfully  FIXME')
+    return {}
+
+def call_collection_importer(filepath, cfg):
+    """Returns result of galaxy_importer Collection import process.
+
+    :param file: Collection artifact file to import.
+    :param cfg: galaxyimporter.config.Config instance
+    """
 
     # FIXME: need role archive filename regex
     match = FILENAME_REGEXP.match(os.path.basename(filepath))
