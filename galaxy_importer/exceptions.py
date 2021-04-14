@@ -48,3 +48,7 @@ class ContentNameError(ImporterError):
 
 class RuntimeFileError(ImporterError):
     pass
+
+
+class RoleMetadataError(ImporterError):
+    pass

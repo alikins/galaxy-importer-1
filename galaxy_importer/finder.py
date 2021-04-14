@@ -106,3 +106,18 @@ class ContentFinder(object):
             else:
                 yield (content_type, 'plugins/' + content_type.value,
                        self._find_plugins)
+
+
+class RoleContentFinder(ContentFinder):
+    def _content_type_dirs(self):
+        """Yields tuples of content_type, directory, func"""
+
+        for content_type in constants.ContentType:
+            if content_type == constants.ContentType.ROLE:
+                yield content_type, '.', self._find_roles
+            elif content_type == constants.ContentType.MODULE:
+                yield content_type, 'modules', self._find_plugins
+            else:
+                yield (content_type, content_type.value,
+                       self._find_plugins)
+

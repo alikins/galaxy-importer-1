@@ -306,6 +306,21 @@ class CollectionInfo(object):
 
 
 @attr.s(frozen=True)
+class RoleMetadataInfo(object):
+    """Represents info and metadata about a role from meta/main.yml"""
+
+    namespace = attr.ib(default=None)
+    name = attr.ib(default=None)
+    version = attr.ib(default=None)
+    license = attr.ib(factory=list)
+    description = attr.ib(default=None)
+    requires_ansible = attr.ib(default=None)
+    tags = attr.ib(factory=list)
+
+    dependencies = attr.ib(factory=list)
+
+
+@attr.s(frozen=True)
 class CollectionArtifactManifest(object):
     """Represents collection manifest metadata."""
 
@@ -337,6 +352,7 @@ class ImportResult(object):
     contents = attr.ib(factory=list, type=ResultContentItem)
     custom_license = attr.ib(default=None)
     requires_ansible = attr.ib(default=None)
+    artifact_type = attr.ib(default=None)
 
 
 @attr.s

@@ -31,6 +31,14 @@ FILENAME_REGEXP = re.compile(
     r"^(?P<namespace>\w+)-(?P<name>\w+)-"
     r"(?P<version>[0-9a-zA-Z.+-]+)\.tar\.gz$"
 )
+
+# TODO: for roles for scm etc, will need to dig in a bit
+#       and figure out namespace/name/version differently
+ROLE_FILENAME_REGEXP = re.compile(
+    r"^(?P<namespace>\w+)\.(?P<name>\w+)-"
+    r"(?P<version>[0-9a-zA-Z.+-]+)\.tar\.gz$"
+)
+
 logger = logging.getLogger(__name__)
 logger.error('foooo')
 
@@ -105,36 +113,28 @@ def call_importer(filepath, cfg, artifact_type):
     # TODO: handle role archives and collection archives
     #       either by splitting this up or abstracting it (or both)
     if artifact_type == ContentArtifactType.COLLECTION:
-        return call_collection_importer(filepath, cfg)
+        match = FILENAME_REGEXP.match(os.path.basename(filepath))
     if artifact_type == ContentArtifactType.ROLE:
-        return call_role_importer(filepath, cfg)
+        match = ROLE_FILENAME_REGEXP.match(os.path.basename(filepath))
+        logger.debug('match: %s', match)
 
-def call_role_importer(filepath, cfg):
-    """Returns result of galaxy_importer Role import process.
+    if not match:
+        raise ImporterError(f'The filepath {filepath} could not be parsed as a {artifact_type}')
 
-    :param file: Role artifact file to import.
-    :param cfg: galaxyimporter.config.Config instance
-    """
-    logger.debug('filepath: %s', filepath)
-    logger.info('Role importer processing completed successfully  FIXME')
-    return {}
-
-def call_collection_importer(filepath, cfg):
-    """Returns result of galaxy_importer Collection import process.
-
-    :param file: Collection artifact file to import.
-    :param cfg: galaxyimporter.config.Config instance
-    """
+    namespace, name, version = match.groups()
+    # FIXME: slightly misleading name for this tuple
+    filename = collection.CollectionFilename(namespace, name, version)
 
     # FIXME: need role archive filename regex
-    match = FILENAME_REGEXP.match(os.path.basename(filepath))
-    namespace, name, version = match.groups()
-    filename = collection.CollectionFilename(namespace, name, version)
 
     with open(filepath, 'rb') as f:
         try:
-            data = collection.import_collection(f, filename, logger=logger, cfg=cfg)
+            data = collection.import_collection(f, filename,
+                                                logger=logger, cfg=cfg,
+                                                artifact_type=artifact_type)
         except ImporterError as e:
+            logger.exception(e)
+            raise
             logger.error(f'The import failed for the following reason: {str(e)}')
             return None
         except Exception:

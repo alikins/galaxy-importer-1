@@ -26,8 +26,9 @@ import attr
 import requests
 
 from galaxy_importer import config
+from galaxy_importer.constants import ContentArtifactType
 from galaxy_importer import exceptions as exc
-from galaxy_importer.finder import ContentFinder
+from galaxy_importer.finder import ContentFinder, RoleContentFinder
 from galaxy_importer import loaders
 from galaxy_importer import schema
 from galaxy_importer.ansible_test import runners
@@ -45,7 +46,7 @@ CollectionFilename = \
 
 #TODO: extract the artifact opening/extracting bits to artifacts.py?
 
-def import_collection(file, filename=None, logger=None, cfg=None):
+def import_collection(file, filename=None, logger=None, cfg=None, artifact_type=None):
     """Process import on collection artifact file object.
 
     :raises exc.ImporterError: On errors that fail the import process.
@@ -55,10 +56,10 @@ def import_collection(file, filename=None, logger=None, cfg=None):
         config_data = config.ConfigFile.load()
         cfg = config.Config(config_data=config_data)
     logger = logger or default_logger
-    return _import_collection(file, filename, logger, cfg)
+    return _import_collection(file, filename, logger, cfg, artifact_type)
 
 
-def _import_collection(file, filename, logger, cfg):
+def _import_collection(file, filename, logger, cfg, artifact_type):
     # with tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir) as tmp_dir:
     tmp_dir_obj =  tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir)
     tmp_dir = tmp_dir_obj.name
@@ -95,8 +96,15 @@ def _import_collection(file, filename, logger, cfg):
 
         log.debug('artifact %s extracted to %s', filepath, extract_dir)
 
-        data = CollectionLoader(extract_dir, filename, cfg=cfg, logger=logger).load()
-        logger.info('Collection loading complete')
+        if artifact_type == ContentArtifactType.COLLECTION:
+            data = CollectionArtifactLoader(extract_dir, filename,
+                                            cfg=cfg, logger=logger).load()
+            logger.info('Collection Artifact loading complete')
+
+        if artifact_type == ContentArtifactType.ROLE:
+            data = RoleArtifactLoader(extract_dir, filename,
+                                      cfg=cfg, logger=logger).load()
+            logger.info('Role Artifact loading complete')
 
         ansible_test_runner = runners.get_runner(cfg=cfg)
         if ansible_test_runner:
@@ -147,11 +155,12 @@ def _extract_tar_shell(tarfile_path, extract_dir):
     subprocess.run(args, cwd=cwd, stderr=subprocess.PIPE, check=True)
 
 
-class CollectionLoader(object):
-    """Loads collection and content info."""
+class ArtifactLoader(object):
+    content_finder_cls = ContentFinder
 
     def __init__(self, path, filename, cfg=None, logger=None):
-        self.log = logger or default_logger
+        # self.log = logger or default_logger
+        self.log = logging.getLogger('%s.%s' % (__name__, self.__class__.__name__))
         self.path = path
         self.filename = filename
         self.cfg = cfg
@@ -159,17 +168,94 @@ class CollectionLoader(object):
         self.content_objs = None
         self.metadata = None
         self.docs_blob = None
+        self.doc_strings = {}
         self.contents = None
-        log.debug('CollectionLoader init path=%s filename=%s', path, filename)
+        self.requires_ansible = None
+        self.content_finder = self.content_finder_cls()
+        log.debug('init path=%s filename=%s', path, filename)
+
+    def _load_contents(self):
+        """Find and load data for each content inside the collection."""
+        # found_contents = ContentFinder().find_contents(self.path, self.log)
+        found_contents = self.content_finder.find_contents(self.path, self.log)
+        log.debug('found_contents from %s: %s', self.path, found_contents)
+        for content_type, rel_path in found_contents:
+            log.debug('content_type: %s rel_path: %s', content_type, rel_path)
+            loader_cls = loaders.get_loader_cls(content_type)
+            loader = loader_cls(
+                content_type, rel_path, self.path, self.doc_strings, self.cfg, self.log)
+            content_obj = loader.load()
+
+            log.debug('content_obj: %s', content_obj)
+            yield content_obj
+
+    def _rename_extract_path(self):
+        log.debug('self.filename: %s', self.filename)
+        namespace = self.filename.namespace
+        name = self.filename.name
+        old_ns_dir = os.path.dirname(self.path)
+        ansible_collections_dir = os.path.dirname(old_ns_dir)
+        new_ns_dir = os.path.join(ansible_collections_dir, namespace)
+        os.rename(old_ns_dir, new_ns_dir)
+
+        old_name_dir = os.path.join(new_ns_dir, os.path.basename(self.path))
+        new_name_dir = os.path.join(new_ns_dir, name)
+        os.rename(old_name_dir, new_name_dir)
+        self.path = new_name_dir
+        self.log.debug(f'Renamed extract dir to: {self.path}')
+
+    def _build_contents_blob(self):
+        """Build importer result contents from Content objects."""
+        return [
+            schema.ResultContentItem(
+                name=c.name,
+                content_type=c.content_type.value,
+                description=c.description,
+            )
+            for c in self.content_objs
+        ]
+
+
+class RoleArtifactLoader(ArtifactLoader):
+    content_finder_cls = RoleContentFinder
+    def load(self):
+        self._rename_extract_path()
+        self.content_objs = list(self._load_contents())
+        self.contents = self._build_contents_blob()
+
+        return schema.ImportResult(
+            metadata=self.metadata,
+            docs_blob=self.docs_blob,
+            contents=self.contents,
+            requires_ansible=self.requires_ansible,
+            artifact_type=ContentArtifactType.ROLE,
+        )
+
+    def _load_role_metadata(self):
+        # FIXME: handle main.yml/main.yaml
+        metadata_file = os.path.join(self.path, 'meta', 'main.yml')
+        if not os.path.exists(metadata_file):
+            raise exc.RoleMetadataError('No meta/main.yml found in role at %s' % self.path)
+
+        with open(metadata_file, 'r') as f:
+            try:
+                data = schema.CollectionArtifactManifest.parse(f.read())
+            except ValueError as e:
+                raise exc.ManifestValidationError(str(e))
+            self.metadata = data.collection_info
+
+
+class CollectionArtifactLoader(ArtifactLoader):
+    """Loads collection and content info."""
+    content_finder_cls = ContentFinder
 
     def load(self):
         log.debug('self.path: %s, self.filename=%s', self.path, self.filename)
-        # self._load_collection_manifest()
+        self._load_collection_manifest()
         self._rename_extract_path()
-        # self._check_filename_matches_manifest()
-        # self._check_metadata_filepaths()
+        self._check_filename_matches_manifest()
+        self._check_metadata_filepaths()
 
-        self.doc_strings = {}
         # if self.cfg.run_ansible_doc:
         #     self.doc_strings = loaders.DocStringLoader(
         #         path=self.path,
@@ -189,6 +275,7 @@ class CollectionLoader(object):
             docs_blob=self.docs_blob,
             contents=self.contents,
             requires_ansible=self.requires_ansible,
+            artifact_type=ContentArtifactType.COLLECTION,
         )
 
     def _load_collection_manifest(self):
@@ -203,20 +290,6 @@ class CollectionLoader(object):
                 raise exc.ManifestValidationError(str(e))
             self.metadata = data.collection_info
 
-    def _rename_extract_path(self):
-        log.debug('self.filename: %s', self.filename)
-        namespace = self.filename.namespace
-        name = self.filename.name
-        old_ns_dir = os.path.dirname(self.path)
-        ansible_collections_dir = os.path.dirname(old_ns_dir)
-        new_ns_dir = os.path.join(ansible_collections_dir, namespace)
-        os.rename(old_ns_dir, new_ns_dir)
-
-        old_name_dir = os.path.join(new_ns_dir, os.path.basename(self.path))
-        new_name_dir = os.path.join(new_ns_dir, name)
-        os.rename(old_name_dir, new_name_dir)
-        self.path = new_name_dir
-        self.log.debug(f'Renamed extract dir to: {self.path}')
 
     def _check_filename_matches_manifest(self):
         if not self.filename:
@@ -230,29 +303,6 @@ class CollectionLoader(object):
                 raise exc.ManifestValidationError(
                     f'Filename {item} "{filename_item}" did not match metadata "{metadata_item}"')
 
-    def _load_contents(self):
-        """Find and load data for each content inside the collection."""
-        found_contents = ContentFinder().find_contents(self.path, self.log)
-        log.debug('found_contents from %s: %s', self.path, found_contents)
-        for content_type, rel_path in found_contents:
-            log.debug('rel_path: %s', rel_path)
-            loader_cls = loaders.get_loader_cls(content_type)
-            loader = loader_cls(
-                content_type, rel_path, self.path, self.doc_strings, self.cfg, self.log)
-            content_obj = loader.load()
-
-            yield content_obj
-
-    def _build_contents_blob(self):
-        """Build importer result contents from Content objects."""
-        return [
-            schema.ResultContentItem(
-                name=c.name,
-                content_type=c.content_type.value,
-                description=c.description,
-            )
-            for c in self.content_objs
-        ]
 
     def _build_docs_blob(self):
         """Build importer result docs_blob from collection documentation."""
