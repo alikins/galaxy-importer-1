@@ -17,6 +17,7 @@
 
 import json
 import re
+import yaml
 
 import attr
 import semantic_version
@@ -73,6 +74,10 @@ class CollectionFilename(object):
 
     def __str__(self):
         return f'{self.namespace}-{self.name}-{self.version}.tar.gz'
+
+    @property
+    def label(self):
+        return f'{self.namespace}-{self.name}-{self.version}'
 
     @classmethod
     def parse(cls, filename):
@@ -314,10 +319,30 @@ class RoleMetadataInfo(object):
     version = attr.ib(default=None)
     license = attr.ib(factory=list)
     description = attr.ib(default=None)
-    requires_ansible = attr.ib(default=None)
+    min_ansible_version = attr.ib(default=None)
     tags = attr.ib(factory=list)
+    author = attr.ib(factory=list)
 
     dependencies = attr.ib(factory=list)
+    platforms = attr.ib(factory=list)
+    categories = attr.ib(factory=list)
+
+    company = attr.ib(default=None)
+
+@attr.s(frozen=True)
+class RoleArtifactMetaMain(object):
+    """Represents the data in roles meta/main.yml"""
+
+    role_metadata_info = attr.ib(type=RoleMetadataInfo)
+
+    @classmethod
+    def parse(cls, data):
+        meta_main_data = yaml.safe_load(data)
+        dependencies = meta_main_data['dependencies']
+        galaxy_info = meta_main_data['galaxy_info']
+        galaxy_info['dependencies'] = dependencies
+        role_metadata_info = RoleMetadataInfo(**galaxy_info)
+        return cls(role_metadata_info=role_metadata_info)
 
 
 @attr.s(frozen=True)

@@ -60,23 +60,27 @@ def import_collection(file, filename=None, logger=None, cfg=None, artifact_type=
 
 
 def _import_collection(file, filename, logger, cfg, artifact_type):
+    log.debug('filename: %s', filename)
+    log.debug('type(filename): %s', type(filename))
+
+    # tmp_dir_obj = tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir)
+    tmp_dir = tempfile.mkdtemp(dir=cfg.tmp_root_dir)
+    log.debug('tmp_dir: %s', tmp_dir)
+
     # with tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir) as tmp_dir:
-    tmp_dir_obj =  tempfile.TemporaryDirectory(dir=cfg.tmp_root_dir)
-    tmp_dir = tmp_dir_obj.name
+    if True:
+        # TODO: collection specific
+        if artifact_type == ContentArtifactType.COLLECTION:
+            sub_path = 'ansible_collections/placeholder_namespace/placeholder_name'
+            extract_dir = os.path.join(tmp_dir, sub_path)
 
-    def fauxexit(mgr, arg1, arg2, arg3):
-        log.debug('arg1: %s, arg2: %s, arg3: %s', arg1, arg2, arg3)
-        raise 37/0
-        return True
+        if artifact_type == ContentArtifactType.ROLE:
+            extract_dir = tmp_dir
 
-    tmp_dir_obj.__exit__ = fauxexit
+        log.debug('extract_dir: %s', extract_dir)
 
-    with tmp_dir_obj:
-        sub_path = 'ansible_collections/placeholder_namespace/placeholder_name'
-        extract_dir = os.path.join(tmp_dir, sub_path)
-        os.makedirs(extract_dir)
+        os.makedirs(extract_dir, exist_ok=True)
 
-        log.debug(dir(tmp_dir_obj))
         # import pprint
         # log.debug(pprint.pformat(locals()))
 
@@ -86,12 +90,12 @@ def _import_collection(file, filename, logger, cfg, artifact_type):
             filepath = str(file.file.file.name)
 
         log.debug('filepath: %s', filepath)
-        log.debug('extract_dir: %s', extract_dir)
 
         if not os.path.exists(filepath):
             parameters = {'ResponseContentDisposition': 'attachment;filename=archive.tar.gz'}
             storage_archive_url = file.storage.url(file.name, parameters=parameters)
             filepath = _download_archive(storage_archive_url, tmp_dir)
+
         _extract_archive(tarfile_path=filepath, extract_dir=extract_dir)
 
         log.debug('artifact %s extracted to %s', filepath, extract_dir)
@@ -174,19 +178,22 @@ class ArtifactLoader(object):
         self.content_finder = self.content_finder_cls()
         log.debug('init path=%s filename=%s', path, filename)
 
-    def _load_contents(self):
+    def _load_contents(self, path):
         """Find and load data for each content inside the collection."""
         # found_contents = ContentFinder().find_contents(self.path, self.log)
-        found_contents = self.content_finder.find_contents(self.path, self.log)
-        log.debug('found_contents from %s: %s', self.path, found_contents)
+        found_contents = self.content_finder.find_contents(path, self.log)
+        log.debug('found_contents from %s: %s', path, found_contents)
+
         for content_type, rel_path in found_contents:
             log.debug('content_type: %s rel_path: %s', content_type, rel_path)
+
             loader_cls = loaders.get_loader_cls(content_type)
             loader = loader_cls(
-                content_type, rel_path, self.path, self.doc_strings, self.cfg, self.log)
+                content_type, rel_path, path, self.doc_strings, self.cfg, self.log)
             content_obj = loader.load()
 
             log.debug('content_obj: %s', content_obj)
+
             yield content_obj
 
     def _rename_extract_path(self):
@@ -218,10 +225,16 @@ class ArtifactLoader(object):
 
 class RoleArtifactLoader(ArtifactLoader):
     content_finder_cls = RoleContentFinder
+
     def load(self):
-        self._rename_extract_path()
-        self.content_objs = list(self._load_contents())
+        # self._rename_extract_path()
+        log.debug('self.filename: %s', self.filename)
+        log.debug('type self.filename: %s', type(self.filename))
+        self._load_role_metadata()
+        full_path = os.path.join(self.path, self.sub_path)
+        self.content_objs = list(self._load_contents(full_path))
         self.contents = self._build_contents_blob()
+        self.requires_ansible = self.metadata['min_ansible_version']
 
         return schema.ImportResult(
             metadata=self.metadata,
@@ -231,18 +244,23 @@ class RoleArtifactLoader(ArtifactLoader):
             artifact_type=ContentArtifactType.ROLE,
         )
 
+    @property
+    def sub_path(self):
+        return f'{self.filename.namespace}.{self.filename.name}-{self.filename.version}'
+
     def _load_role_metadata(self):
         # FIXME: handle main.yml/main.yaml
-        metadata_file = os.path.join(self.path, 'meta', 'main.yml')
-        if not os.path.exists(metadata_file):
+        metadata_file_path = loaders.RoleLoader._find_metadata_file_path(self.path, self.sub_path)
+        # metadata_file = os.path.join(self.path, 'meta', 'main.yml')
+        if not os.path.exists(metadata_file_path):
             raise exc.RoleMetadataError('No meta/main.yml found in role at %s' % self.path)
 
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file_path, 'r') as f:
             try:
-                data = schema.CollectionArtifactManifest.parse(f.read())
+                data = schema.RoleArtifactMetaMain.parse(f.read())
             except ValueError as e:
-                raise exc.ManifestValidationError(str(e))
-            self.metadata = data.collection_info
+                raise exc.RoleMetadataError(str(e))
+            self.metadata = data.role_metadata_info
 
 
 class CollectionArtifactLoader(ArtifactLoader):
@@ -264,7 +282,7 @@ class CollectionArtifactLoader(ArtifactLoader):
         #         cfg=self.cfg,
         #     ).load()
 
-        self.content_objs = list(self._load_contents())
+        self.content_objs = list(self._load_contents(self.path))
 
         self.contents = self._build_contents_blob()
         self.docs_blob = self._build_docs_blob()

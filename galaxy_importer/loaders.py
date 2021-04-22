@@ -50,7 +50,7 @@ MAX_LENGTH_REQUIRES_ANSIBLE = 255
 
 class ContentLoader(metaclass=abc.ABCMeta):
 
-    def __init__(self, content_type, rel_path, root, doc_strings=None, cfg=None, logger=None):
+    def __init__(self, content_type, rel_path, root, doc_strings=None, cfg=None, logger=None, name=None):
         """
         :param content_type: Content type.
         :param rel_path: Path to content file or dir, relative to root path.
@@ -72,7 +72,7 @@ class ContentLoader(metaclass=abc.ABCMeta):
         self.rel_path = rel_path
         self.root = root
 
-        self.name = self._make_name(self.rel_path)
+        self.name = name or self._make_name(self.rel_path)
         self._validate_name()
         self.path_name = self._make_path_name(self.rel_path, self.name)
 
@@ -424,6 +424,7 @@ class RoleLoader(ContentLoader):
         """Gets path to role metadata file."""
         for file in ROLE_META_FILES:
             meta_path = os.path.join(root, rel_path, file)
+            default_logger.debug('meta_path: %s', meta_path)
             if os.path.exists(meta_path):
                 return meta_path
         return None
